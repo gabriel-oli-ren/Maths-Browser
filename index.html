@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MiniProxy</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f0f0f;
+      color: #e0e0e0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    #toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      background: #1a1a1a;
+      border-bottom: 1px solid #2a2a2a;
+      flex-shrink: 0;
+    }
+
+    .nav-btn {
+      width: 32px;
+      height: 32px;
+      background: #2a2a2a;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #aaa;
+      cursor: pointer;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    .nav-btn:hover { background: #333; color: #fff; }
+
+    #url-bar {
+      flex: 1;
+      height: 34px;
+      padding: 0 14px;
+      background: #2a2a2a;
+      border: 1px solid #333;
+      border-radius: 20px;
+      color: #e0e0e0;
+      font-size: 13px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    #url-bar:focus { border-color: #555; }
+    #url-bar::placeholder { color: #555; }
+
+    #go-btn {
+      height: 34px;
+      padding: 0 18px;
+      background: #2563eb;
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background 0.15s;
+    }
+    #go-btn:hover { background: #3b82f6; }
+    #go-btn:active { background: #1d4ed8; }
+
+    #status-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 14px;
+      background: #141414;
+      border-bottom: 1px solid #222;
+      font-size: 11px;
+      color: #555;
+      flex-shrink: 0;
+    }
+
+    #status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #555;
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    #status-dot.ready { background: #22c55e; }
+    #status-dot.loading { background: #f59e0b; }
+    #status-dot.error { background: #ef4444; }
+
+    #viewport {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    #frame {
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: #fff;
+      display: none;
+    }
+
+    #home {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      padding: 40px;
+    }
+
+    #home h1 {
+      font-size: 28px;
+      font-weight: 600;
+      color: #e0e0e0;
+      letter-spacing: -0.5px;
+    }
+
+    #home p {
+      font-size: 14px;
+      color: #555;
+      text-align: center;
+      max-width: 360px;
+      line-height: 1.6;
+    }
+
+    .quick-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      max-width: 480px;
+    }
+
+    .quick-link {
+      padding: 6px 14px;
+      background: #1e1e1e;
+      border: 1px solid #2a2a2a;
+      border-radius: 20px;
+      color: #888;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .quick-link:hover { background: #2a2a2a; color: #ccc; border-color: #3a3a3a; }
+
+    #loading-screen {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: #0f0f0f;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+    }
+    #loading-screen.active { display: flex; }
+
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border: 2px solid #2a2a2a;
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #loading-url {
+      font-size: 12px;
+      color: #444;
+      font-family: monospace;
+      max-width: 300px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="toolbar">
+    <button class="nav-btn" id="back-btn" title="Back">&#8592;</button>
+    <button class="nav-btn" id="fwd-btn" title="Forward">&#8594;</button>
+    <button class="nav-btn" id="reload-btn" title="Reload">&#8635;</button>
+    <button class="nav-btn" id="home-btn" title="Home">&#8962;</button>
+    <input id="url-bar" type="text" placeholder="Enter a URL — e.g. https://example.com" autocomplete="off" spellcheck="false" />
+    <button id="go-btn">Go</button>
+  </div>
+
+  <div id="status-bar">
+    <div id="status-dot"></div>
+    <span id="status-text">Enter a URL to start browsing</span>
+  </div>
+
+  <div id="viewport">
+    <div id="home">
+      <h1>MiniProxy</h1>
+      <p>Browse the web through this proxy. Enter any URL above and press Go.</p>
+      <div class="quick-links">
+        <div class="quick-link" onclick="navigate('https://example.com')">example.com</div>
+        <div class="quick-link" onclick="navigate('https://wikipedia.org')">wikipedia.org</div>
+        <div class="quick-link" onclick="navigate('https://news.ycombinator.com')">hacker news</div>
+        <div class="quick-link" onclick="navigate('https://lite.cnn.com')">cnn lite</div>
+        <div class="quick-link" onclick="navigate('https://text.npr.org')">npr text</div>
+      </div>
+    </div>
+
+    <div id="loading-screen">
+      <div class="spinner"></div>
+      <div id="loading-url"></div>
+    </div>
+
+    <iframe
+      id="frame"
+      sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+    ></iframe>
+  </div>
+
+  <script>
+    const urlBar    = document.getElementById('url-bar');
+    const goBtn     = document.getElementById('go-btn');
+    const frame     = document.getElementById('frame');
+    const homeDiv   = document.getElementById('home');
+    const loading   = document.getElementById('loading-screen');
+    const loadingUrl= document.getElementById('loading-url');
+    const statusDot = document.getElementById('status-dot');
+    const statusTxt = document.getElementById('status-text');
+    const backBtn   = document.getElementById('back-btn');
+    const fwdBtn    = document.getElementById('fwd-btn');
+    const reloadBtn = document.getElementById('reload-btn');
+    const homeBtn   = document.getElementById('home-btn');
+
+    let history = [];
+    let historyIndex = -1;
+
+    function setStatus(state, text) {
+      statusDot.className = state;
+      statusTxt.textContent = text;
+    }
+
+    function navigate(rawUrl) {
+      let url = rawUrl.trim();
+      if (!url) return;
+      if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+
+      urlBar.value = url;
+      loadingUrl.textContent = url;
+
+      homeDiv.style.display = 'none';
+      frame.style.display = 'none';
+      loading.classList.add('active');
+      setStatus('loading', `Loading ${url}...`);
+
+      // Push to history
+      history = history.slice(0, historyIndex + 1);
+      history.push(url);
+      historyIndex = history.length - 1;
+
+      frame.src = '/proxy?url=' + encodeURIComponent(url);
+    }
+
+    frame.addEventListener('load', () => {
+      loading.classList.remove('active');
+      frame.style.display = 'block';
+      setStatus('ready', 'Page loaded');
+    });
+
+    frame.addEventListener('error', () => {
+      loading.classList.remove('active');
+      frame.style.display = 'block';
+      setStatus('error', 'Failed to load page');
+    });
+
+    goBtn.addEventListener('click', () => navigate(urlBar.value));
+    urlBar.addEventListener('keydown', e => { if (e.key === 'Enter') navigate(urlBar.value); });
+
+    backBtn.addEventListener('click', () => {
+      if (historyIndex > 0) {
+        historyIndex--;
+        const url = history[historyIndex];
+        urlBar.value = url;
+        loadingUrl.textContent = url;
+        frame.style.display = 'none';
+        loading.classList.add('active');
+        setStatus('loading', `Loading ${url}...`);
+        frame.src = '/proxy?url=' + encodeURIComponent(url);
+      }
+    });
+
+    fwdBtn.addEventListener('click', () => {
+      if (historyIndex < history.length - 1) {
+        historyIndex++;
+        const url = history[historyIndex];
+        urlBar.value = url;
+        loadingUrl.textContent = url;
+        frame.style.display = 'none';
+        loading.classList.add('active');
+        setStatus('loading', `Loading ${url}...`);
+        frame.src = '/proxy?url=' + encodeURIComponent(url);
+      }
+    });
+
+    reloadBtn.addEventListener('click', () => {
+      if (history[historyIndex]) navigate(history[historyIndex]);
+    });
+
+    homeBtn.addEventListener('click', () => {
+      frame.src = 'about:blank';
+      frame.style.display = 'none';
+      loading.classList.remove('active');
+      homeDiv.style.display = 'flex';
+      urlBar.value = '';
+      setStatus('', 'Enter a URL to start browsing');
+      statusDot.className = '';
+    });
+  </script>
+
+</body>
+</html>
